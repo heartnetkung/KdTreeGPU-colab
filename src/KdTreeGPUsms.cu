@@ -338,29 +338,6 @@ void KdNode::printTuple(const KdCoord* tuple, const sint dim)
 	cout << tuple[dim-1] << ")";
 }
 
-/*
- * Print the k-d tree "sideways" with the root at the ltChild.
- *
- * calling parameters:
- *
- * dim - the number of dimensions
- * depth - the depth in the k-d tree
- */
-void KdNode::printKdTree(KdNode kdNodes[], const KdCoord coords[], const sint dim, const sint depth) const
-{
-	if (gtChild != -1) {
-		kdNodes[gtChild].printKdTree(kdNodes, coords, dim, depth+1);
-	}
-	for (sint i=0; i<depth; i++) cout << "       ";
-	printTuple(coords+tuple*dim, dim);
-	cout << endl;
-	if (ltChild != -1) {
-		kdNodes[ltChild].printKdTree(kdNodes, coords, dim, depth+1);
-	}
-}
-
-
-
 /* Create a simple k-d tree and print its topology for inspection. */
 sint main(sint argc, char **argv)
 {
