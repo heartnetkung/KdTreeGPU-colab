@@ -1,3 +1,10 @@
+## Installation on Colab
+```python
+! git clone https://github.com/heartnetkung/KdTreeGPU-colab.git
+! mkdir /content/KdTreeGPU-colab/obj
+! cd KdTreeGPU-colab && make
+```
+
 ## An Implementation of a Balanced K-D Tree Builder Using GPUs
 
 John Robinson
