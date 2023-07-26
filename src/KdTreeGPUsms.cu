@@ -89,114 +89,7 @@ using namespace std;
 #include "Gpu.h"
 #include "KdNode.h"
 
-
-//#if __cplusplus != 201103L
-#if 0
-
-#include <chrono>
-#define TIMER_DECLARATION()						\
-		auto startTime = std::chrono::high_resolution_clock::now();		\
-		auto endTime = <std::chrono::high_resolution_clock::now();
-#define TIMER_START()							\
-		startTime = std::chrono::high_resolution_clock::now(); // high_resolution_clock::is_steady
-#define TIMER_STOP(__TIMED)						\
-		endTime = std::chrono::high_resolution_clock::now();			\
-		__TIMED = (std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - startTime).count())/1000.0
-
-#elif defined(MACH)
-
-#define TIMER_DECLARATION()				\
-		struct timespec startTime, endTime;
-#define TIMER_START()						\
-		mach_gettime(CLOCK_REALTIME, &startTime);
-#define TIMER_STOP(__TIMED)					\
-		clock_gettime(CLOCK_REALTIME, &endTime);			\
-		__TIMED = (endTime.tv_sec - startTime.tv_sec) +			\
-		1.0e-9 * ((double)(endTime.tv_nsec - startTime.tv_nsec))
-
-#else
-
-#define TIMER_DECLARATION()				\
-		struct timespec startTime, endTime;
-#define TIMER_START()						\
-		clock_gettime(CLOCK_REALTIME, &startTime);
-#define TIMER_STOP(__TIMED)					\
-		clock_gettime(CLOCK_REALTIME, &endTime);			\
-		__TIMED = (endTime.tv_sec - startTime.tv_sec) +			\
-		1.0e-9 * ((double)(endTime.tv_nsec - startTime.tv_nsec))
-
-#endif
-
 Gpu *gpu;
-
-/*
- * The superKeyCompare method compares two sint arrays in all k dimensions,
- * and uses the sorting or partition coordinate as the most significant dimension.
- *
- * calling parameters:
- *
- * a - a int*
- * b - a int*
- * p - the most significant dimension
- * dim - the number of dimensions
- *
- * returns: +1, 0 or -1 as the result of comparing two sint arrays
- */
-KdCoord KdNode::superKeyCompare(const KdCoord *a, const KdCoord *b, const sint p, const sint dim)
-{
-	KdCoord diff = 0;
-	for (sint i = 0; i < dim; i++) {
-		sint r = i + p;
-		r = (r < dim) ? r : r - dim;
-		diff = a[r] - b[r];
-		if (diff != 0) {
-			break;
-		}
-	}
-	return diff;
-}
-
-/*
- * Walk the k-d tree and check that the children of a node are in the correct branch of that node.
- *
- * calling parameters:
- *
- * dim - the number of dimensions
- * depth - the depth in the k-d tree
- *
- * returns: a count of the number of kdNodes in the k-d tree
- */
-sint KdNode::verifyKdTree( const KdNode kdNodes[], const KdCoord coords[], const sint dim, const sint depth) const
-{
-	sint count = 1 ;
-
-	// The partition cycles as x, y, z, w...
-	sint axis = depth % dim;
-
-	if (ltChild != -1) {
-		if (superKeyCompare(coords+kdNodes[ltChild].tuple*dim, coords+tuple*dim, axis, dim) >= 0) {
-			cout << "At Depth " << depth << " LT child is > node on axis " << axis << "!" << endl;
-			printTuple(coords+tuple*dim, dim);
-			cout << " < [" << ltChild << "]";
-			printTuple(coords+kdNodes[ltChild].tuple*dim, dim);
-			cout << endl;
-			exit(1);
-		}
-		count += kdNodes[ltChild].verifyKdTree(kdNodes, coords, dim, depth + 1);
-	}
-	if (gtChild != -1) {
-		if (superKeyCompare(coords+kdNodes[gtChild].tuple*dim, coords+tuple*dim, axis, dim) <= 0) {
-			cout << "At Depth " << depth << " GT child is < node on axis " << axis << "!" << endl;
-			printTuple(coords+tuple*dim, dim);
-			cout << " > [" << gtChild << "]";
-			printTuple(coords+kdNodes[gtChild].tuple*dim, dim);
-			cout << endl;
-			exit(1);
-		}
-		count += kdNodes[gtChild].verifyKdTree(kdNodes, coords, dim, depth + 1);
-	}
-	return count;
-}
 
 /*
  * The createKdTree function performs the necessary initialization then calls the buildKdTree function.
@@ -211,19 +104,13 @@ sint KdNode::verifyKdTree( const KdNode kdNodes[], const KdCoord coords[], const
 KdNode* KdNode::createKdTree(KdNode kdNodes[], KdCoord coordinates[],  const sint numDimensions, const sint numTuples)
 {
 
-	TIMER_DECLARATION();
-
-	TIMER_START();
 	Gpu::initializeKdNodesArray(coordinates, numTuples, numDimensions);
 	cudaDeviceSynchronize();
-	TIMER_STOP (double initTime);
 
 	// Sort the reference array using multiple threads if possible.
 
-	TIMER_START();
 	sint end[numDimensions]; // Array used to collect results of the remove duplicates function
 	Gpu::mergeSort(end, numTuples, numDimensions);
-	TIMER_STOP (double sortTime);
 
 	// Check that the same number of references was removed from each reference array.
 	for (sint i = 0; i < numDimensions-1; i++) {
@@ -247,21 +134,8 @@ KdNode* KdNode::createKdTree(KdNode kdNodes[], KdCoord coordinates[],  const sin
 	cout << numTuples-end[0] << " equal nodes removed. "<< endl;
 
 	// Build the k-d tree.
-	TIMER_START();
 	//  refIdx_t root = gpu->startBuildKdTree(kdNodes, end[0], numDimensions);
 	refIdx_t root = Gpu::buildKdTree(kdNodes, end[0], numDimensions);
-	TIMER_STOP (double kdTime);
-
-	// Verify the k-d tree and report the number of KdNodes.
-	TIMER_START();
-	sint numberOfNodes = Gpu::verifyKdTree(kdNodes, root, numDimensions, numTuples);
-	// sint numberOfNodes = kdNodes[root].verifyKdTree( kdNodes, coordinates, numDimensions, 0);
-	cout <<  "Number of nodes = " << numberOfNodes << endl;
-	TIMER_STOP (double verifyTime);
-
-	cout << "totalTime = " << fixed << setprecision(4) << initTime + sortTime + kdTime + verifyTime
-			<< "  initTime = " << initTime << "  sortTime + removeDuplicatesTime = " << sortTime
-			<< "  kdTime = " << kdTime << "  verifyTime = " << verifyTime << endl << endl;
 
 	// Return the pointer to the root of the k-d tree.
 	return &kdNodes[root];
@@ -428,7 +302,6 @@ sint main(sint argc, char **argv)
 	if (searchDistance == 0){
 		return 0;
 	}
-	TIMER_DECLARATION();
 	// Search the k-d tree for the k-d nodes that lie within the cutoff distance of the first tuple.
 	KdCoord* query = (KdCoord *)malloc(numDimensions * sizeof(KdCoord));
 	for (sint i = 0; i < numDimensions; i++) {
@@ -436,15 +309,7 @@ sint main(sint argc, char **argv)
 	}
 	// read the KdTree back from GPU
 	Gpu::getKdTreeResults( kdNodes,  coordinates, numPoints, numDimensions);
-#define VERIFY_ON_HOST
-#ifdef VERIFY_ON_HOST
-	sint numberOfNodes = root->verifyKdTree( kdNodes, coordinates, numDimensions, 0);
-	cout <<  "Number of nodes on host = " << numberOfNodes << endl;
-#endif
-	TIMER_START();
 	list<KdNode> kdList = root->searchKdTree(kdNodes, coordinates, query, searchDistance, numDimensions, 0);
-	TIMER_STOP(double searchTime);
-	cout << "searchTime = " << fixed << setprecision(2) << searchTime << " seconds" << endl << endl;
 
 	cout << endl << kdList.size() << " nodes within " << searchDistance << " units of ";
 	KdNode::printTuple(query, numDimensions);
